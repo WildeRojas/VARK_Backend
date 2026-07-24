@@ -32,9 +32,8 @@ RUN SECRET_KEY=placeholder-build-only \
     GROQ_API_KEY=x \
     python manage.py collectstatic --noinput
 
-# Puerto 8000
-ENV PORT=8000
+# Puerto que Railway inyecta en $PORT
 EXPOSE 8000
 
-# Arrancar Gunicorn directamente sin retrasos de migración
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120 --access-logfile - config.wsgi:application"]
+# Gunicorn inicia inmediatamente — sin migrate
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "120"]
