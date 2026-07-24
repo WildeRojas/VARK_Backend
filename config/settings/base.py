@@ -110,13 +110,19 @@ SIMPLE_JWT = {
 
 # ─── CORS ───────────────────────────────────────────────────────────────────
 CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=True, cast=bool)
-_raw_origins = config(
-    'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:3000',
-    cast=lambda v: [s.strip() for s in v.split(',') if s.strip() and s.strip() != '*'],
-)
-if _raw_origins:
-    CORS_ALLOWED_ORIGINS = _raw_origins
+
+_origins_env = config('CORS_ALLOWED_ORIGINS', default='')
+if _origins_env:
+    _parsed = [s.strip() for s in _origins_env.split(',') if s.strip() and s.strip() != '*']
+    if _parsed:
+        CORS_ALLOWED_ORIGINS = _parsed
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.railway\.app$",
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
+]
+
 CORS_ALLOW_CREDENTIALS = True
 
 # ─── Groq IA ────────────────────────────────────────────────────────────────
