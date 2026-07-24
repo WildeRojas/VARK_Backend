@@ -1,0 +1,31 @@
+# Entorno virtual
+venv/
+env/
+.venv/
+
+# Variables de entorno (nunca subir al repositorio)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.Python
+
+# Django
+*.log
+db.sqlite3
+staticfiles/
+media/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
