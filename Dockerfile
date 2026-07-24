@@ -32,9 +32,9 @@ RUN SECRET_KEY=placeholder-build-only \
     GROQ_API_KEY=x \
     python manage.py collectstatic --noinput
 
-# Puerto 8000 configurado en Railway Public Networking
+# Puerto 8000
 ENV PORT=8000
 EXPOSE 8000
 
-# Aplicar migraciones pendientes y arrancar gunicorn en el puerto 8000
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn --bind 0.0.0.0:8000 --workers 2 --timeout 120 --access-logfile - config.wsgi:application"]
+# Arrancar Gunicorn directamente sin retrasos de migración
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120 --access-logfile - config.wsgi:application"]
