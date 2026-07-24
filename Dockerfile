@@ -24,7 +24,7 @@ ENV DJANGO_SETTINGS_MODULE=config.settings.production
 
 # collectstatic necesita cargar los settings
 RUN SECRET_KEY=placeholder-build-only \
-    ALLOWED_HOSTS=localhost \
+    ALLOWED_HOSTS=* \
     DB_NAME=x \
     DB_USER=x \
     DB_PASSWORD=x \
@@ -32,8 +32,7 @@ RUN SECRET_KEY=placeholder-build-only \
     GROQ_API_KEY=x \
     python manage.py collectstatic --noinput
 
-# Puerto que Railway inyecta en $PORT
+ENV PORT=8000
 EXPOSE 8000
 
-# Gunicorn inicia inmediatamente — sin migrate
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "120"]
+CMD ["sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120 --access-logfile -"]
