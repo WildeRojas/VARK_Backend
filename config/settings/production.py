@@ -9,20 +9,20 @@ DEBUG = False
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
     default='*',
-    cast=lambda v: [s.strip() for s in v.split(',') if s.strip()],
+    cast=lambda v: [s.strip().strip('"\'') for s in v.split(',') if s.strip()],
 )
 
 # Base de datos PostgreSQL (producción)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST'),
-        'PORT': config('DB_PORT', default='5432'),
+        'NAME': config('DB_NAME').strip('"\''),
+        'USER': config('DB_USER').strip('"\''),
+        'PASSWORD': config('DB_PASSWORD').strip('"\''),
+        'HOST': config('DB_HOST').strip('"\''),
+        'PORT': config('DB_PORT', default='5432').strip('"\''),
         'OPTIONS': {
-            'sslmode': config('DB_SSLMODE', default='require'),
+            'sslmode': config('DB_SSLMODE', default='require').strip('"\''),
         },
     }
 }

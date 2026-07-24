@@ -8,7 +8,7 @@ from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-SECRET_KEY = config('SECRET_KEY')
+SECRET_KEY = config('SECRET_KEY').strip('"\'')
 
 INSTALLED_APPS = [
     # Django core
@@ -113,7 +113,7 @@ CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=True, cast=boo
 
 _origins_env = config('CORS_ALLOWED_ORIGINS', default='')
 if _origins_env:
-    _parsed = [s.strip() for s in _origins_env.split(',') if s.strip() and s.strip() != '*']
+    _parsed = [s.strip().strip('"\'') for s in _origins_env.split(',') if s.strip() and s.strip().strip('"\'') != '*']
     if _parsed:
         CORS_ALLOWED_ORIGINS = _parsed
 
@@ -126,8 +126,8 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
 CORS_ALLOW_CREDENTIALS = True
 
 # ─── Groq IA ────────────────────────────────────────────────────────────────
-GROQ_API_KEY = config('GROQ_API_KEY')
-GROQ_MODEL = config('GROQ_MODEL', default='llama3-8b-8192')
+GROQ_API_KEY = config('GROQ_API_KEY').strip('"\'')
+GROQ_MODEL = config('GROQ_MODEL', default='llama3-8b-8192').strip('"\'')
 
 # ─── Celery ─────────────────────────────────────────────────────────────────
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
