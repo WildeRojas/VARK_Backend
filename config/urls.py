@@ -16,9 +16,27 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenRefreshView
 
+def health_check(request):
+    return JsonResponse({
+        'status': 'ok',
+        'message': 'VARK API Backend está funcionando correctamente en Railway',
+        'endpoints': {
+            'login': '/api/accounts/login/',
+            'registro': '/api/accounts/registro/',
+            'accounts': '/api/accounts/',
+            'contenido': '/api/contenido/',
+            'recomendacion': '/api/recomendacion/',
+            'analitica': '/api/analitica/',
+            'admin': '/admin/',
+        }
+    })
+
 urlpatterns = [
+    path('', health_check, name='root-health-check'),
+    path('api/', health_check, name='api-health-check'),
     path('admin/', admin.site.urls),
 
     # Paquetes del proyecto
