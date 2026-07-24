@@ -23,6 +23,11 @@ DATABASES = {
         'PORT': config('DB_PORT', default='5432').strip('"\''),
         'OPTIONS': {
             'sslmode': config('DB_SSLMODE', default='require').strip('"\''),
+            'connect_timeout': 10,
+            'keepalives': 1,
+            'keepalives_idle': 30,
+            'keepalives_interval': 10,
+            'keepalives_count': 5,
         },
     }
 }
