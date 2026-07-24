@@ -22,8 +22,7 @@ COPY . .
 # Variables de entorno requeridas en build
 ENV DJANGO_SETTINGS_MODULE=config.settings.production
 
-# collectstatic necesita cargar los settings, que a su vez requieren vars de entorno.
-# Se pasan valores placeholder solo para este paso del build (no se usan en runtime).
+# collectstatic necesita cargar los settings
 RUN SECRET_KEY=placeholder-build-only \
     ALLOWED_HOSTS=localhost \
     DB_NAME=x \
@@ -33,14 +32,5 @@ RUN SECRET_KEY=placeholder-build-only \
     GROQ_API_KEY=x \
     python manage.py collectstatic --noinput
 
-# Cloud Run inyecta la variable PORT (default 8080)
-ENV PORT=8080
-EXPOSE 8080
-
-# Aplicar migraciones pendientes y arrancar gunicorn
-CMD python manage.py migrate --noinput && \
-    gunicorn --bind 0.0.0.0:$PORT \
-             --workers 2 \
-             --timeout 120 \
-             --access-logfile - \
-             config.wsgi:application
+# Aplicar migraciones pendientes y arrancar gunicorn en el puerto dinámico de Railway ($PORT)
+CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120 --access-logfile - config.wsgi:application"]
