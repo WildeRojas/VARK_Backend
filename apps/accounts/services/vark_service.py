@@ -1,3 +1,5 @@
+import urllib.request
+import urllib.error
 import json
 import logging
 
@@ -319,6 +321,39 @@ def generar_preguntas_candidatas(cantidad=10, contexto=''):
         return _muestrear_estatico(cantidad), 'estatico'
 
 
+
+def _llamar_gemini_vark(prompt):
+    api_key = getattr(settings, 'GEMINI_API_KEY', '')
+    if not api_key:
+        raise ValueError('GEMINI_API_KEY no configurada')
+
+    model = getattr(settings, 'GEMINI_MODEL', 'gemini-1.5-flash')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.5,
+            "responseMimeType": "application/json",
+        },
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        res_data = json.loads(resp.read().decode('utf-8'))
+        candidates = res_data.get('candidates', [])
+        if candidates and 'content' in candidates[0]:
+            parts = candidates[0]['content'].get('parts', [])
+            if parts and 'text' in parts[0]:
+                return parts[0]['text'].strip()
+    raise ValueError('Respuesta vacía de Gemini API.')
+
 def _generar_via_groq(cantidad=15, contexto=''):
     from groq import Groq
 
@@ -328,16 +363,29 @@ def _generar_via_groq(cantidad=15, contexto=''):
         contexto=contexto or 'aprender conceptos de programación (algoritmos, estructuras de datos, POO, etc.)',
     )
 
-    client = Groq(api_key=settings.GROQ_API_KEY)
+    content = None
+    if getattr(settings, 'GROQ_API_KEY', ''):
+        try:
+            client = Groq(api_key=settings.GROQ_API_KEY)
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0.7,
+                max_tokens=4000,
+            )
+            content = response.choices[0].message.content.strip()
+        except Exception as exc:
+            logger.warning('Groq no disponible para VARK (%s). Intentando con Gemini...', exc)
 
-    response = client.chat.completions.create(
-        model=settings.GROQ_MODEL,
-        messages=[{'role': 'user', 'content': prompt}],
-        temperature=0.7,
-        max_tokens=4000,
-    )
+    if not content and getattr(settings, 'GEMINI_API_KEY', ''):
+        try:
+            content = _llamar_gemini_vark(prompt)
+            logger.info('Preguntas VARK generadas con Gemini de respaldo.')
+        except Exception as exc:
+            logger.error('Gemini tampoco pudo generar test VARK: %s', exc)
 
-    content = response.choices[0].message.content.strip()
+    if not content:
+        raise ValueError('Ningún proveedor de IA disponible.')
 
     # Remover bloques markdown si el modelo los incluye
     if '```json' in content:

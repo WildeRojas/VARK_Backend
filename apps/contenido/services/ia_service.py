@@ -1,5 +1,7 @@
 import json
 import logging
+import urllib.request
+import urllib.error
 
 from django.conf import settings
 
@@ -34,7 +36,8 @@ Responde ÚNICAMENTE con JSON válido, sin bloques markdown, con esta estructura
       "justificacion_pedagogica": "Por qué encaja con el estilo {estilo_codigo}"
     }}
   ]
-}}"""
+}}
+"""
 
 CRITERIOS_VARK = {
     'V': 'Recursos visuales: videos explicativos, infografías, diagramas animados, presentaciones visuales.',
@@ -51,19 +54,53 @@ NOMBRES_VARK = {
 }
 
 
+def _llamar_gemini_json(prompt):
+    """Llama a Google Gemini REST API como respaldo si Groq falla o agota tokens."""
+    api_key = getattr(settings, 'GEMINI_API_KEY', '')
+    if not api_key:
+        raise ValueError('GEMINI_API_KEY no está configurada.')
+
+    model = getattr(settings, 'GEMINI_MODEL', 'gemini-1.5-flash')
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.4,
+            "responseMimeType": "application/json",
+        },
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        res_data = json.loads(resp.read().decode('utf-8'))
+        candidates = res_data.get('candidates', [])
+        if candidates and 'content' in candidates[0]:
+            parts = candidates[0]['content'].get('parts', [])
+            if parts and 'text' in parts[0]:
+                return parts[0]['text'].strip()
+    raise ValueError('Respuesta vacía o inválida de Gemini API.')
+
+
+def _extraer_json(content):
+    """Limpia wrappers de markdown si existen y parsea JSON."""
+    content = content.strip()
+    if '```json' in content:
+        content = content.split('```json')[1].split('```')[0].strip()
+    elif '```' in content:
+        content = content.split('```')[1].split('```')[0].strip()
+    return json.loads(content)
+
+
 def sugerir_recursos_ia(tema_nombre, categoria_vark, nivel='basico', cantidad=8):
     """
-    Llama a Groq para obtener sugerencias de recursos educativos.
-
-    Args:
-        tema_nombre: str — nombre del tema (ej: "Vectores")
-        categoria_vark: str — 'V', 'A', 'R' o 'K'
-        nivel: str — 'basico', 'intermedio', 'avanzado'
-        cantidad: int — número de recursos solicitados (entre 5 y 10)
-
-    Returns:
-        list[dict] — lista de recursos con: titulo, url, descripcion,
-                     tipo_formato, justificacion_pedagogica
+    Llama a Groq (o Gemini como respaldo) para obtener sugerencias de recursos.
     """
     cantidad = max(5, min(10, cantidad))
 
@@ -76,43 +113,48 @@ def sugerir_recursos_ia(tema_nombre, categoria_vark, nivel='basico', cantidad=8)
         criterios_estilo=CRITERIOS_VARK.get(categoria_vark, ''),
     )
 
-    try:
-        from groq import Groq
-        client = Groq(api_key=settings.GROQ_API_KEY)
+    content = None
+    # 1. Intentar con Groq
+    if getattr(settings, 'GROQ_API_KEY', ''):
+        try:
+            from groq import Groq
+            client = Groq(api_key=settings.GROQ_API_KEY)
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0.6,
+                max_tokens=3000,
+            )
+            content = response.choices[0].message.content.strip()
+        except Exception as exc:
+            logger.warning('Groq no disponible para sugerir recursos (%s). Intentando con Gemini...', exc)
 
-        response = client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[{'role': 'user', 'content': prompt}],
-            temperature=0.6,
-            max_tokens=3000,
-        )
+    # 2. Respaldo: Intentar con Gemini
+    if not content and getattr(settings, 'GEMINI_API_KEY', ''):
+        try:
+            content = _llamar_gemini_json(prompt)
+            logger.info('Sugerencias de recursos generadas exitosamente con Gemini de respaldo.')
+        except Exception as exc:
+            logger.error('Gemini tampoco pudo responder: %s', exc)
 
-        content = response.choices[0].message.content.strip()
+    if not content:
+        raise ValueError('Ningún proveedor de IA (Groq ni Gemini) está disponible.')
 
-        if '```json' in content:
-            content = content.split('```json')[1].split('```')[0].strip()
-        elif '```' in content:
-            content = content.split('```')[1].split('```')[0].strip()
+    data = _extraer_json(content)
+    recursos = data.get('recursos', [])
 
-        data = json.loads(content)
-        recursos = data.get('recursos', [])
+    if not recursos:
+        raise ValueError('La IA retornó una lista vacía de recursos.')
 
-        if not recursos:
-            raise ValueError('Groq retornó una lista vacía de recursos.')
+    tipos_validos = {'video', 'articulo', 'ejercicio', 'documento'}
+    for r in recursos:
+        if r.get('tipo_formato') not in tipos_validos:
+            r['tipo_formato'] = 'articulo'
 
-        tipos_validos = {'video', 'articulo', 'ejercicio', 'documento'}
-        for r in recursos:
-            if r.get('tipo_formato') not in tipos_validos:
-                r['tipo_formato'] = 'articulo'
-
-        return recursos
-
-    except Exception as exc:
-        logger.error('Error al sugerir recursos via Groq: %s', exc)
-        raise
+    return recursos
 
 
-# ─── Fase 4: Generación de preguntas de quiz con IA ───────────────────────────
+# ─── Generación de preguntas de quiz con IA ───
 
 PROMPT_PREGUNTAS_QUIZ = """Eres un experto en didáctica de la programación.
 
@@ -143,20 +185,15 @@ Responde ÚNICAMENTE con JSON válido, sin bloques markdown, con esta estructura
       ]
     }}
   ]
-}}"""
+}}
+"""
 
 DIFICULTAD_NOMBRE = {'facil': 'Fácil', 'media': 'Media', 'dificil': 'Difícil'}
 
 
 def generar_preguntas_quiz(tema_nombre, dificultad='facil', cantidad=5):
     """
-    Llama a Groq para generar preguntas de quiz candidatas (no las guarda).
-
-    Returns:
-        list[dict] — cada una: {enunciado, explicacion, opciones:[{texto, es_correcta}]}
-
-    Lanza una excepción si la IA falla o devuelve un formato inválido
-    (el frontend mantiene la creación manual como respaldo).
+    Llama a Groq (o Gemini como respaldo) para generar preguntas de quiz candidatas.
     """
     cantidad = max(1, min(10, cantidad))
     prompt = PROMPT_PREGUNTAS_QUIZ.format(
@@ -165,28 +202,38 @@ def generar_preguntas_quiz(tema_nombre, dificultad='facil', cantidad=5):
         cantidad=cantidad,
     )
 
-    from groq import Groq
-    client = Groq(api_key=settings.GROQ_API_KEY)
+    content = None
+    # 1. Intentar con Groq
+    if getattr(settings, 'GROQ_API_KEY', ''):
+        try:
+            from groq import Groq
+            client = Groq(api_key=settings.GROQ_API_KEY)
+            response = client.chat.completions.create(
+                model=settings.GROQ_MODEL,
+                messages=[{'role': 'user', 'content': prompt}],
+                temperature=0.6,
+                max_tokens=3500,
+            )
+            content = response.choices[0].message.content.strip()
+        except Exception as exc:
+            logger.warning('Groq no disponible para quiz (%s). Intentando con Gemini...', exc)
 
-    response = client.chat.completions.create(
-        model=settings.GROQ_MODEL,
-        messages=[{'role': 'user', 'content': prompt}],
-        temperature=0.6,
-        max_tokens=3500,
-    )
+    # 2. Respaldo: Intentar con Gemini
+    if not content and getattr(settings, 'GEMINI_API_KEY', ''):
+        try:
+            content = _llamar_gemini_json(prompt)
+            logger.info('Preguntas de quiz generadas exitosamente con Gemini de respaldo.')
+        except Exception as exc:
+            logger.error('Gemini tampoco pudo generar quiz: %s', exc)
 
-    content = response.choices[0].message.content.strip()
-    if '```json' in content:
-        content = content.split('```json')[1].split('```')[0].strip()
-    elif '```' in content:
-        content = content.split('```')[1].split('```')[0].strip()
+    if not content:
+        raise ValueError('Ningún proveedor de IA (Groq ni Gemini) está disponible.')
 
-    data = json.loads(content)
+    data = _extraer_json(content)
     preguntas = data.get('preguntas', [])
     if not preguntas:
         raise ValueError('La IA no devolvió preguntas.')
 
-    # Validar/normalizar: 4 opciones y exactamente 1 correcta
     validadas = []
     for p in preguntas:
         opciones = p.get('opciones', [])
@@ -194,7 +241,6 @@ def generar_preguntas_quiz(tema_nombre, dificultad='facil', cantidad=5):
             continue
         correctas = [o for o in opciones if o.get('es_correcta')]
         if len(correctas) != 1:
-            # Forzar la primera como correcta si la IA no marcó exactamente una
             for i, o in enumerate(opciones):
                 o['es_correcta'] = (i == 0)
         validadas.append({

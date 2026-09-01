@@ -127,7 +127,9 @@ CORS_ALLOW_CREDENTIALS = True
 
 # ─── Groq IA ────────────────────────────────────────────────────────────────
 GROQ_API_KEY = config('GROQ_API_KEY').strip('"\'')
-GROQ_MODEL = config('GROQ_MODEL', default='llama3-8b-8192').strip('"\'')
+GROQ_MODEL = config('GROQ_MODEL', default='llama3-8b-8192')
+GEMINI_API_KEY = config('GEMINI_API_KEY', default='').strip('"\'')
+GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-1.5-flash').strip('"\'')
 
 # ─── Celery ─────────────────────────────────────────────────────────────────
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')

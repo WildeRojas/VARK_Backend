@@ -40,7 +40,7 @@ class DashboardEstudianteView(APIView):
 
         # ── Perfil VARK actual ──────────────────────────────────────────────
         try:
-            perfil = estudiante.perfilvark
+            perfil = estudiante.perfil_vark
             vector = perfil.vector
             estilo_dominante = max(vector, key=vector.get)
         except Exception:
