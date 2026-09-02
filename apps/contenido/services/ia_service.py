@@ -55,13 +55,15 @@ NOMBRES_VARK = {
 
 
 def _llamar_gemini_json(prompt):
-    """Llama a Google Gemini REST API como respaldo si Groq falla o agota tokens."""
-    api_key = getattr(settings, 'GEMINI_API_KEY', '')
+    """Llama a Google Gemini REST API con soporte para gemini-2.5-flash y fallbacks."""
+    api_key = getattr(settings, 'GEMINI_API_KEY', '').strip('"\'') 
     if not api_key:
         raise ValueError('GEMINI_API_KEY no está configurada.')
 
-    model = getattr(settings, 'GEMINI_MODEL', 'gemini-1.5-flash')
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    configured_model = getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash').strip('"\'')
+    models_to_try = [configured_model, 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-1.5-flash']
+    # Remove duplicates preserving order
+    models_to_try = list(dict.fromkeys(models_to_try))
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -71,21 +73,29 @@ def _llamar_gemini_json(prompt):
         },
     }
 
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers={'Content-Type': 'application/json'},
-        method='POST',
-    )
+    last_err = None
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                res_data = json.loads(resp.read().decode('utf-8'))
+                candidates = res_data.get('candidates', [])
+                if candidates and 'content' in candidates[0]:
+                    parts = candidates[0]['content'].get('parts', [])
+                    if parts and 'text' in parts[0]:
+                        return parts[0]['text'].strip()
+        except Exception as exc:
+            last_err = exc
+            logger.warning('Fallo llamando a modelo Gemini %s: %s', model, exc)
+            continue
 
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        res_data = json.loads(resp.read().decode('utf-8'))
-        candidates = res_data.get('candidates', [])
-        if candidates and 'content' in candidates[0]:
-            parts = candidates[0]['content'].get('parts', [])
-            if parts and 'text' in parts[0]:
-                return parts[0]['text'].strip()
-    raise ValueError('Respuesta vacía o inválida de Gemini API.')
+    raise ValueError(f'Error al consultar Gemini API: {last_err}')
 
 
 def _extraer_json(content):
