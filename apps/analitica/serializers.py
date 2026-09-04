@@ -76,6 +76,7 @@ class ReporteDocenteSerializer(serializers.Serializer):
     promedio_puntaje_quizzes = serializers.FloatField()
     recursos_mas_efectivos = serializers.ListField()
     estudiantes_bajo_engagement = serializers.ListField()
+    estudiantes_progreso = serializers.ListField(required=False)
     distribucion_vark = serializers.DictField()    # {V: n, A: n, R: n, K: n}
 
 

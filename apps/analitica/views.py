@@ -372,11 +372,56 @@ class ReporteDocenteView(APIView):
             dominante = max(p.vector, key=p.vector.get)
             dist[dominante] += 1
 
+
+        # Progreso real de todos los estudiantes (Quizzes, Recursos, Perfil)
+        estudiantes_progreso = []
+        for u in todos_estudiantes.order_by('first_name', 'last_name', 'email'):
+            q_count = ResultadoQuiz.objects.filter(estudiante=u).count()
+            r_count = EventoClickstream.objects.filter(estudiante=u, tipo_evento='clic').count()
+
+            vec = {'V': 0.25, 'A': 0.25, 'R': 0.25, 'K': 0.25}
+            dom = 'V'
+            try:
+                if hasattr(u, 'perfil_vark') and u.perfil_vark and u.perfil_vark.vector:
+                    vec = u.perfil_vark.vector
+                    dom = max(vec, key=vec.get)
+            except Exception:
+                pass
+
+            last_quiz = ResultadoQuiz.objects.filter(estudiante=u).order_by('-fecha_realizacion').first()
+            last_click = EventoClickstream.objects.filter(estudiante=u).order_by('-timestamp').first()
+            last_dt = None
+            if last_quiz and last_click:
+                last_dt = max(last_quiz.fecha_realizacion, last_click.timestamp)
+            elif last_quiz:
+                last_dt = last_quiz.fecha_realizacion
+            elif last_click:
+                last_dt = last_click.timestamp
+
+            last_act_str = last_dt.strftime('%d %b, %H:%M') if last_dt else 'Sin actividad reciente'
+
+            estudiantes_progreso.append({
+                'id': u.pk,
+                'nombre': u.nombre_completo or u.email,
+                'email': u.email,
+                'quizzes': q_count,
+                'recursos': r_count,
+                'dominante': dom,
+                'profile': {
+                    'v': round((vec.get('V', 0.25) or 0) * 100),
+                    'a': round((vec.get('A', 0.25) or 0) * 100),
+                    'r': round((vec.get('R', 0.25) or 0) * 100),
+                    'k': round((vec.get('K', 0.25) or 0) * 100),
+                },
+                'ultima_actividad': last_act_str,
+            })
+
         return Response({
             'total_estudiantes': total_estudiantes,
             'promedio_puntaje_quizzes': round(avg_puntaje, 3),
             'recursos_mas_efectivos': list(recursos_efectivos),
             'estudiantes_bajo_engagement': bajo_engagement,
+            'estudiantes_progreso': estudiantes_progreso,
             'distribucion_vark': dist,
         })
 
