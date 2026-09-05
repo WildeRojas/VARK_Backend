@@ -138,12 +138,61 @@ class MarcarRecomendacionVistaView(APIView):
 
 class RegistrarEventoClickstreamView(APIView):
     """
-    POST /api/recomendacion/clickstream/
-    Registra un evento de interacción del estudiante con un recurso.
+    POST /api/recomendacion/clickstream/ -> Registrar interacción del estudiante con un recurso
+    GET  /api/recomendacion/clickstream/ -> Listar eventos reales de clickstream de estudiantes y KPIs para el monitor
     """
-    permission_classes = [EsEstudiante]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.rol not in ('administrador', 'docente'):
+            return Response({'detail': 'No tienes permisos para consultar el monitor de clickstream.'}, status=status.HTTP_403_FORBIDDEN)
+
+        from django.utils import timezone
+        hoy = timezone.now().date()
+        eventos_hoy = EventoClickstream.objects.filter(timestamp__date=hoy).count()
+        usuarios_activos = EventoClickstream.objects.values('estudiante').distinct().count()
+        recursos_vistos = EventoClickstream.objects.values('recurso').distinct().count()
+        total_eventos = EventoClickstream.objects.count()
+
+        eventos_qs = (
+            EventoClickstream.objects
+            .select_related('estudiante', 'recurso')
+            .order_by('-timestamp')[:50]
+        )
+
+        data_eventos = []
+        for ev in eventos_qs:
+            nom = 'Estudiante'
+            if ev.estudiante:
+                nom = getattr(ev.estudiante, 'nombre_completo', None) or ev.estudiante.email
+            rec_tit = 'Recurso'
+            if ev.recurso:
+                rec_tit = ev.recurso.titulo
+            data_eventos.append({
+                'id': ev.id,
+                'user': nom,
+                'recurso': rec_tit,
+                'recurso_id': ev.recurso.id if ev.recurso else None,
+                'tipo_evento': ev.tipo_evento,
+                'timestamp': ev.timestamp.isoformat(),
+            })
+
+        return Response({
+            'kpis': {
+                'eventos_hoy': eventos_hoy,
+                'usuarios_activos': usuarios_activos,
+                'recursos_vistos': recursos_vistos,
+                'total_eventos': total_eventos,
+            },
+            'eventos': data_eventos,
+        })
 
     def post(self, request):
+        if request.user.rol != 'estudiante':
+            return Response(
+                {'detail': 'Solo los estudiantes registran eventos de clickstream.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         serializer = EventoClickstreamSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
